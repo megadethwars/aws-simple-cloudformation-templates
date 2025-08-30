@@ -1,0 +1,7 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Plantilla simple de CloudFormation para crear un bucket de S3
+Resources:
+  SimpleS3Bucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: soyelrandom-the-first-bucket
