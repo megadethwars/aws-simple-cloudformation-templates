@@ -1,0 +1,147 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: ECS con ECR, VPC privada, subredes y grupo de seguridad
+
+Resources:
+  # ECR Repository
+  SoyelrandomCloudformationECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: soyelrandom-cloudformation-ecs-repo
+
+  # ECS Cluster
+  SoyelrandomCloudformationECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: soyelrandom-cloudformation-ecs-cluster
+
+  # ECS Task Execution Role
+  SoyelrandomCloudformationECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: soyelrandom-cloudformation-ecs-task-execution-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  # ECS Task Definition (vacía, sin imagen aún)
+  SoyelrandomCloudformationECSTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: soyelrandom-cloudformation-ecs-task
+      Cpu: '256'
+      Memory: '512'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: 
+        Fn::GetAtt: [SoyelrandomCloudformationECSTaskExecutionRole, Arn]
+      ContainerDefinitions:
+        - Name: soyelrandom-cloudformation-container
+          Image: "nginx:latest" # Imagen temporal, reemplazar por la de ECR cuando esté disponible
+          Essential: true
+          PortMappings:
+            - ContainerPort: 80
+
+  # VPC
+  SoyelrandomCloudformationVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: soyelrandom-cloudformation-vpc
+
+  # Subnet 1 (privada)
+  SoyelrandomCloudformationSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        Ref: SoyelrandomCloudformationVPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: 
+        Fn::Select:
+          - 0
+          - Fn::GetAZs: ''
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: soyelrandom-cloudformation-subnet-1
+
+  # Subnet 2 (privada)
+  SoyelrandomCloudformationSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        Ref: SoyelrandomCloudformationVPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone:
+        Fn::Select:
+          - 1
+          - Fn::GetAZs: ''
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: soyelrandom-cloudformation-subnet-2
+
+  # Security Group
+  SoyelrandomCloudformationSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: soyelrandom-cloudformation ECS Security Group
+      VpcId:
+        Ref: SoyelrandomCloudformationVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: 0
+          ToPort: 0
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: soyelrandom-cloudformation-sg
+
+  # ECS Service
+  SoyelrandomCloudformationECSService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: soyelrandom-cloudformation-ecs-service
+      Cluster:
+        Ref: SoyelrandomCloudformationECSCluster
+      TaskDefinition:
+        Ref: SoyelrandomCloudformationECSTaskDefinition
+      DesiredCount: 1
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups:
+            - Ref: SoyelrandomCloudformationSecurityGroup
+          Subnets:
+            - Ref: SoyelrandomCloudformationSubnet1
+            - Ref: SoyelrandomCloudformationSubnet2
+
+Outputs:
+  ECRRepositoryUri:
+    Description: URI del repositorio ECR
+    Value: 
+      Fn::GetAtt: [SoyelrandomCloudformationECRRepository, RepositoryUri]
+  ECSClusterName:
+    Description: Nombre del ECS Cluster
+    Value: 
+      Ref: SoyelrandomCloudformationECSCluster
+  VPCId:
+    Description: ID de la VPC
+    Value: 
+      Ref: SoyelrandomCloudformationVPC

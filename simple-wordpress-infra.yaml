@@ -1,0 +1,235 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'WordPress infrastructure with EC2, RDS, and private VPC - Development environment'
+
+Parameters:
+  KeyPairName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Name of an existing EC2 KeyPair to enable SSH access
+  
+  DBUsername:
+    Type: String
+    Default: wpuser
+    Description: Database admin username
+  
+  DBPassword:
+    Type: String
+    NoEcho: true
+    MinLength: 8
+    Description: Database admin password (minimum 8 characters)
+
+Resources:
+  SoyElRandomWpVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: soyelrandom-wp-vpc
+
+  SoyElRandomWpIGW:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: soyelrandom-wp-igw
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId:
+        Ref: SoyElRandomWpVPC
+      InternetGatewayId: 
+        Ref: SoyElRandomWpIGW
+
+  SoyElRandomWpPublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref SoyElRandomWpVPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: soyelrandom-wp-public-subnet
+
+  SoyElRandomWpPrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref SoyElRandomWpVPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: soyelrandom-wp-private-subnet-1
+
+  SoyElRandomWpPrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref SoyElRandomWpVPC
+      CidrBlock: 10.0.3.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: soyelrandom-wp-private-subnet-2
+
+  SoyElRandomWpPublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: 
+        Ref: SoyElRandomWpVPC
+      Tags:
+        - Key: Name
+          Value: soyelrandom-wp-public-rt
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: 
+        Ref: SoyElRandomWpPublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: 
+        Ref: SoyElRandomWpIGW
+
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: 
+        Ref: SoyElRandomWpPublicSubnet
+      RouteTableId: 
+        Ref: SoyElRandomWpPublicRouteTable
+
+  SoyElRandomWpEC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: soyelrandom-wp-ec2-sg
+      GroupDescription: Security group for WordPress EC2 instance
+      VpcId: 
+        Ref: SoyElRandomWpVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: soyelrandom-wp-ec2-sg
+
+  SoyElRandomWpRDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: soyelrandom-wp-rds-sg
+      GroupDescription: Security group for WordPress RDS instance
+      VpcId: 
+        Ref: SoyElRandomWpVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: 
+            Ref: SoyElRandomWpEC2SecurityGroup
+      Tags:
+        - Key: Name
+          Value: soyelrandom-wp-rds-sg
+
+  SoyElRandomWpDBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupName: soyelrandom-wp-db-subnet-group
+      DBSubnetGroupDescription: Subnet group for WordPress RDS
+      SubnetIds:
+        - Ref: SoyElRandomWpPrivateSubnet1
+        - Ref: SoyElRandomWpPrivateSubnet2
+      Tags:
+        - Key: Name
+          Value: soyelrandom-wp-db-subnet-group
+
+  SoyElRandomWpRDS:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: soyelrandom-wp-db
+      DBInstanceClass: db.t3.micro
+      Engine: mysql
+      EngineVersion: '8.0'
+      AllocatedStorage: 20
+      StorageType: gp2
+      DBName: wordpress
+      MasterUsername: 
+        Ref: DBUsername
+      MasterUserPassword: 
+        Ref: DBPassword
+      VPCSecurityGroups:
+        - Ref: SoyElRandomWpRDSSecurityGroup
+      DBSubnetGroupName: 
+        Ref: SoyElRandomWpDBSubnetGroup
+      BackupRetentionPeriod: 0
+      MultiAZ: false
+      PubliclyAccessible: false
+      DeletionProtection: false
+      Tags:
+        - Key: Name
+          Value: soyelrandom-wp-db
+
+  SoyElRandomWpEC2:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: ami-0c02fb55956c7d316  # Amazon Linux 2 AMI (actualiza para tu región si es necesario)
+      InstanceType: t3.micro
+      KeyName: 
+        Ref: KeyPairName
+      SubnetId: 
+        Ref: SoyElRandomWpPublicSubnet
+      SecurityGroupIds:
+        - Ref: SoyElRandomWpEC2SecurityGroup
+      UserData:
+        Fn::Base64: 
+          Fn::Sub: |
+            #!/bin/bash
+            yum update -y
+            amazon-linux-extras install -y lamp-mariadb10.2-php7.2 php7.2
+            yum install -y httpd mariadb-server
+            systemctl start httpd
+            systemctl enable httpd
+            usermod -a -G apache ec2-user
+            chown -R ec2-user:apache /var/www
+            chmod 2775 /var/www
+            find /var/www -type d -exec chmod 2775 {} \;
+            find /var/www -type f -exec chmod 0664 {} \;
+            cd /var/www/html
+            wget https://wordpress.org/latest.tar.gz
+            tar -xzf latest.tar.gz
+            cp -r wordpress/* .
+            rm -rf wordpress latest.tar.gz
+            chown -R apache:apache /var/www/html
+            chmod -R 755 /var/www/html
+            cp wp-config-sample.php wp-config.php
+            sed -i "s/database_name_here/wordpress/" wp-config.php
+            sed -i "s/username_here/${DBUsername}/" wp-config.php
+            sed -i "s/password_here/${DBPassword}/" wp-config.php
+            sed -i "s/localhost/${SoyElRandomWpRDS.Endpoint.Address}/" wp-config.php
+      Tags:
+        - Key: Name
+          Value: soyelrandom-wp-ec2
+
+Outputs:
+  WordPressURL:
+    Description: WordPress site URL
+    Value: !Sub 'http://${SoyElRandomWpEC2.PublicIp}'
+  
+  DatabaseEndpoint:
+    Description: RDS Database Endpoint
+    Value: !GetAtt SoyElRandomWpRDS.Endpoint.Address
+  
+  EC2PublicIP:
+    Description: EC2 Public IP
+    Value: !GetAtt SoyElRandomWpEC2.PublicIp
