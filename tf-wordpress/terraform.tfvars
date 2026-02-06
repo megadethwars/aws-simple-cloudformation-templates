@@ -1,0 +1,5 @@
+aws_region = "us-east-1"
+project_name = "wp-terraform"
+db_username = "wpuser"
+db_password = "380white380"
+key_name = "your-key-pair-name"
